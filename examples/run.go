@@ -30,7 +30,7 @@ func runClient(i int, wg *sync.WaitGroup) {
 	var client sockety.Conn
 	var err error
 	for {
-		client, err = sockety.Dial("tcp", ":3333", sockety.ConnOptions{})
+		client, err = sockety.Dial("tcp", ":3333", nil)
 		if err == nil || endAt.Before(time.Now()) {
 			break
 		}

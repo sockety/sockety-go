@@ -23,7 +23,7 @@ type ServerOptions struct {
 type server struct {
 	// Configuration
 	errorHandler func(e error)
-	connOptions  ConnOptions
+	connOptions  *ConnOptions
 
 	// State
 	sendingMessages atomic.Bool
@@ -61,7 +61,7 @@ func NewServer(options *ServerOptions) Server {
 
 	return &server{
 		errorHandler: errorHandler,
-		connOptions: ConnOptions{
+		connOptions: &ConnOptions{
 			Channels:         options.Channels,
 			WriteChannels:    options.WriteChannels,
 			BufferedMessages: options.BufferedMessages,

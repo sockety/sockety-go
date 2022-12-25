@@ -150,7 +150,7 @@ func createMockConn() sockety.Conn {
 		Reader: bytes.NewReader([]byte{227}),
 		Writer: io.Discard,
 	}
-	conn, err := sockety.NewConn(context.Background(), target, sockety.ConnOptions{
+	conn, err := sockety.NewConn(context.Background(), target, &sockety.ConnOptions{
 		ReadBufferSize: readBufferSize,
 		Channels:       maxChannels,
 		WriteChannels:  maxChannels,
@@ -168,7 +168,7 @@ func getMessageBytes(message sockety.Producer) []byte {
 		Reader: bytes.NewReader([]byte{227}),
 		Writer: buffer,
 	}
-	conn, err := sockety.NewConn(context.Background(), target, sockety.ConnOptions{})
+	conn, err := sockety.NewConn(context.Background(), target, &sockety.ConnOptions{})
 	if err != nil {
 		panic(err)
 	}
@@ -209,7 +209,7 @@ func PrepareServer(handler func(c sockety.Conn)) sockety.Server {
 }
 
 func PrepareClient() sockety.Conn {
-	client, err := sockety.Dial("tcp", ":3333", sockety.ConnOptions{
+	client, err := sockety.Dial("tcp", ":3333", &sockety.ConnOptions{
 		WriteChannels:  maxChannels,
 		Channels:       maxChannels,
 		ReadBufferSize: readBufferSize,
@@ -237,7 +237,7 @@ func Benchmark_Parse_One(b *testing.B) {
 			Reader: reader,
 			Writer: io.Discard,
 		}
-		conn, err := sockety.NewConn(context.Background(), target, sockety.ConnOptions{
+		conn, err := sockety.NewConn(context.Background(), target, &sockety.ConnOptions{
 			ReadBufferSize: readBufferSize,
 			Channels:       maxChannels,
 			WriteChannels:  maxChannels,
@@ -265,7 +265,7 @@ func Benchmark_Parse_PoolCPU(b *testing.B) {
 				Reader: reader,
 				Writer: io.Discard,
 			}
-			conn, err := sockety.NewConn(context.Background(), target, sockety.ConnOptions{
+			conn, err := sockety.NewConn(context.Background(), target, &sockety.ConnOptions{
 				ReadBufferSize: readBufferSize,
 				Channels:       maxChannels,
 				WriteChannels:  maxChannels,

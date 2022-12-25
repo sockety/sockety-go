@@ -96,7 +96,12 @@ type Conn interface {
 
 // Factories
 
-func NewConn(parentCtx context.Context, rw io.ReadWriter, options ConnOptions) (Conn, error) {
+func NewConn(parentCtx context.Context, rw io.ReadWriter, options *ConnOptions) (Conn, error) {
+	// Use default options
+	if options == nil {
+		options = &ConnOptions{}
+	}
+
 	// Read options
 	readChannels := getDefault(options.Channels, MaxChannels)
 	writeChannels := getDefault(options.WriteChannels, MaxChannels)

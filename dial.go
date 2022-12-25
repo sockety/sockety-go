@@ -5,11 +5,11 @@ import (
 	"net"
 )
 
-func Dial(network string, address string, options ConnOptions) (Conn, error) {
+func Dial(network string, address string, options *ConnOptions) (Conn, error) {
 	return DialContext(context.Background(), network, address, options)
 }
 
-func DialContext(context context.Context, network string, address string, options ConnOptions) (Conn, error) {
+func DialContext(context context.Context, network string, address string, options *ConnOptions) (Conn, error) {
 	// Ensure the network type is supported by Sockety
 	validateNetwork(network)
 
