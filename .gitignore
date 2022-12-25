@@ -1,0 +1,12 @@
+# IDE
+.vscode
+.idea
+
+# System files
+.DS_Store
+
+# Generated files
+*.pprof
+
+# Temporary data
+*.log
