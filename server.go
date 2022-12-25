@@ -47,7 +47,10 @@ type Server interface {
 	Done() <-chan struct{}
 }
 
-func NewServer(options ServerOptions) Server {
+func NewServer(options *ServerOptions) Server {
+	if options == nil {
+		options = &ServerOptions{}
+	}
 	errorHandler := options.HandleError
 	if errorHandler == nil {
 		errorHandler = func(e error) {}

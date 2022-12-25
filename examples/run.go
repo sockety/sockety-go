@@ -60,7 +60,7 @@ func runClient(i int, wg *sync.WaitGroup) {
 
 func main() {
 	// Set up server
-	server := sockety.NewServer(sockety.ServerOptions{
+	server := sockety.NewServer(&sockety.ServerOptions{
 		HandleError: onServerError,
 	})
 	err := server.Listen("tcp", ":3333")

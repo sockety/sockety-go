@@ -185,7 +185,7 @@ func getMessageBytes(message sockety.Producer) []byte {
 }
 
 func PrepareServer(handler func(c sockety.Conn)) sockety.Server {
-	server := sockety.NewServer(sockety.ServerOptions{
+	server := sockety.NewServer(&sockety.ServerOptions{
 		ReadBufferSize: readBufferSize,
 		Channels:       maxChannels,
 		WriteChannels:  maxChannels,
