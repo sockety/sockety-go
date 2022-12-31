@@ -3,6 +3,7 @@ package benchmark
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/sockety/sockety-go"
@@ -31,6 +32,15 @@ type RepeatReader struct {
 	remaining chan []byte
 	data      chan []byte
 	content   []byte
+}
+
+func randomBytes(size uint32) []byte {
+	data := make([]byte, size)
+	_, err := rand.Read(data)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }
 
 func newRepeatReader(header []byte, repeat []byte) *RepeatReader {
@@ -68,20 +78,22 @@ func (r *RepeatReader) Repeat() {
 	r.data <- r.content
 }
 
-func (r *RepeatReader) Read(bytes []byte) (int, error) {
-	rem := r.GetRemaining()
-	if rem != nil {
-		copy(bytes, rem)
-		return len(rem), nil
-	}
-	data := <-r.data
-	if len(data) <= len(bytes) {
-		copy(bytes, data)
+func (r *RepeatReader) pass(target []byte, data []byte) (int, error) {
+	if len(data) <= len(target) {
+		copy(target, data)
 		return len(data), nil
 	}
-	copy(bytes, data[:len(bytes):len(bytes)])
-	r.remaining <- data[len(bytes):]
-	return len(bytes), nil
+	copy(target, data[:len(target)])
+	r.remaining <- data[len(target):]
+	return len(target), nil
+}
+
+func (r *RepeatReader) Read(target []byte) (int, error) {
+	rem := r.GetRemaining()
+	if rem != nil {
+		return r.pass(target, rem)
+	}
+	return r.pass(target, <-r.data)
 }
 
 func CreatePool[T any](count int, create func() T) func() T {
@@ -287,6 +299,36 @@ func Benchmark_Parse_PoolCPU(b *testing.B) {
 	})
 }
 
+func Benchmark_Parse_1MB(b *testing.B) {
+	message := getMessageBytes(sockety.NewMessageDraft("ping").RawData(randomBytes(1024 * 1024)))
+
+	RunBenchmark(b, []int{1}, func(run func(fn func())) {
+		reader := newRepeatReader([]byte{227}, message)
+		target := MockReadWriter{
+			Reader: reader,
+			Writer: io.Discard,
+		}
+		conn, err := sockety.NewConn(context.Background(), target, &sockety.ConnOptions{
+			ReadBufferSize: readBufferSize,
+			Channels:       maxChannels,
+			WriteChannels:  maxChannels,
+		})
+		if err != nil {
+			panic(err)
+		}
+		buf := make([]byte, 1024*1024)
+		go func() {
+			for m := range conn.Messages() {
+				io.ReadFull(m.Data(), buf)
+			}
+		}()
+
+		run(func() {
+			reader.Repeat()
+		})
+	})
+}
+
 func Benchmark_Build(b *testing.B) {
 	RunBenchmark(b, []int{1, 10, 100}, func(run func(fn func())) {
 		conn := createMockConn()
@@ -298,8 +340,20 @@ func Benchmark_Build(b *testing.B) {
 	})
 }
 
+func Benchmark_Build_1MB(b *testing.B) {
+	RunBenchmark(b, []int{1, 10, 100}, func(run func(fn func())) {
+		conn := createMockConn()
+		data := randomBytes(1024 * 1024)
+		message := sockety.NewMessageDraft("ping").RawData(data)
+
+		run(func() {
+			conn.Pass(message)
+		})
+	})
+}
+
 func Benchmark_Build_PoolCPU(b *testing.B) {
-	RunDefaultBenchmark(b, func(run func(fn func())) {
+	RunBenchmark(b, []int{1, 10, 100}, func(run func(fn func())) {
 		conn := CreatePool(runtime.GOMAXPROCS(0), createMockConn)
 		message := sockety.NewMessageDraft("ping")
 
@@ -355,6 +409,45 @@ func Benchmark_Send_PoolCPU(b *testing.B) {
 		defer server.Close()
 		client := CreatePool(runtime.GOMAXPROCS(0), PrepareClient)
 		message := sockety.NewMessageDraft("ping")
+
+		run(func() {
+			client().Pass(message)
+		})
+	})
+}
+
+func Benchmark_Send_PoolCPU_1MB_Data(b *testing.B) {
+	RunDefaultBenchmark(b, func(run func(fn func())) {
+		server := PrepareServer(func(c sockety.Conn) {
+			for range c.Messages() {
+			}
+		})
+		defer server.Close()
+		data := randomBytes(1024 * 1024)
+		client := CreatePool(runtime.GOMAXPROCS(0), PrepareClient)
+		message := sockety.NewMessageDraft("ping").RawData(data)
+
+		run(func() {
+			client().Pass(message)
+		})
+	})
+}
+
+func Benchmark_Send_PoolCPU_4MB_Data(b *testing.B) {
+	RunDefaultBenchmark(b, func(run func(fn func())) {
+		server := PrepareServer(func(c sockety.Conn) {
+			//for x := range c.Messages() {
+			//	x.Discard()
+			//}
+			buf := make([]byte, 1024*1024)
+			for m := range c.Messages() {
+				io.ReadFull(m.Data(), buf)
+			}
+		})
+		defer server.Close()
+		data := randomBytes(4 * 1024 * 1024)
+		client := CreatePool(runtime.GOMAXPROCS(0), PrepareClient)
+		message := sockety.NewMessageDraft("ping").RawData(data)
 
 		run(func() {
 			client().Pass(message)

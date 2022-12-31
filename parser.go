@@ -12,6 +12,11 @@ type ParserOptions struct {
 	BufferSize uint32
 }
 
+const (
+	subParserModeHeader = iota
+	subParserModeData
+)
+
 type parser struct {
 	channelsCount  uint16
 	currentChannel *parserChannel
@@ -20,6 +25,7 @@ type parser struct {
 
 	// Temporary items
 	sub           *limitedBufferedReader
+	subMode       uint8
 	packetsSize8  *streamReaderUint8
 	packetsSize16 *streamReaderUint16
 	packetsSize24 *streamReaderUint24
@@ -138,16 +144,29 @@ func getPacketSize(p *parser, signature uint8, r BufferedReader) (uint32, error)
 
 func (p *parser) Read() (ParserResult, error) {
 	if p.sub.size > 0 {
-		return p.currentChannel.Process(p.sub)
+		if p.sub.Len() == 0 {
+			err := p.sub.Preload()
+			if err != nil {
+				return nil, err
+			}
+		}
+		switch p.subMode {
+		case subParserModeHeader:
+			return p.currentChannel.Process(p.sub)
+		case subParserModeData:
+			return nil, p.currentChannel.ProcessData(p.sub)
+		default:
+			panic("impossible path")
+		}
 	}
 
 	for {
-		packet, err := p.reader.ReadByte()
+		signature, err := p.reader.ReadByte()
 		if err != nil {
 			return nil, err
 		}
 
-		switch packet & packetBitmask {
+		switch signature & packetBitmask {
 		case packetHeartbeatBits:
 			// TODO: Handle timeout
 		case packetGoAwayBits:
@@ -155,7 +174,7 @@ func (p *parser) Read() (ParserResult, error) {
 		case packetAbortBits:
 			// TODO: Abort
 		case packetChannelLowBits:
-			p.currentChannel, err = p.channel(uint16(packet & 0b00001111))
+			p.currentChannel, err = p.channel(uint16(signature & 0b00001111))
 			if err != nil {
 				return nil, err
 			}
@@ -164,14 +183,14 @@ func (p *parser) Read() (ParserResult, error) {
 			if err != nil {
 				return nil, err
 			}
-			p.currentChannel, err = p.channel((uint16(packet&0b00001111) << 8) | uint16(next))
+			p.currentChannel, err = p.channel((uint16(signature&0b00001111) << 8) | uint16(next))
 			if err != nil {
 				return nil, err
 			}
 		case packetMessageBits:
-			expectsResponse := packet&expectsResponseBits == expectsResponseBits
-			hasStream := packet&hasStreamBits == hasStreamBits
-			packetSize, err := getPacketSize(p, packet, p.reader)
+			expectsResponse := signature&expectsResponseBits == expectsResponseBits
+			hasStream := signature&hasStreamBits == hasStreamBits
+			packetSize, err := getPacketSize(p, signature, p.reader)
 			if err != nil {
 				return nil, err
 			}
@@ -182,14 +201,22 @@ func (p *parser) Read() (ParserResult, error) {
 				return nil, err
 			}
 
+			p.subMode = subParserModeHeader
 			p.sub.size = offset(packetSize)
-			m, err := p.currentChannel.Process(p.sub)
-			return m, err
+			return p.currentChannel.Process(p.sub)
 		case packetResponseBits:
 		case packetContinueBits:
 		case packetFastReplyLowBits:
 		case packetFastReplyHighBits:
 		case packetDataBits:
+			packetSize, err := getPacketSize(p, signature, p.reader)
+			if err != nil {
+				return nil, err
+			}
+
+			p.subMode = subParserModeData
+			p.sub.size = offset(packetSize)
+			return nil, p.currentChannel.ProcessData(p.sub)
 		case packetStreamBits:
 		case packetStreamEndBits:
 		case packetFileBits:

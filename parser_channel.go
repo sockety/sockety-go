@@ -3,6 +3,7 @@ package sockety
 import (
 	"errors"
 	"github.com/google/uuid"
+	"github.com/sockety/sockety-go/internal/buffer_pool"
 	"io"
 )
 
@@ -10,9 +11,9 @@ import (
 // TODO: Consider single byte array instead of fields list - it should decrease size (i.e. for simple "ping" action - from 80B to ~40B)
 type message struct {
 	stream          io.Reader
+	data            MessageData
 	id              uuid.UUID
 	action          string
-	dataSize        uint64
 	totalFilesSize  uint64
 	filesCount      uint32
 	expectsResponse bool
@@ -27,7 +28,11 @@ func (m *message) Action() string {
 }
 
 func (m *message) DataSize() uint64 {
-	return m.dataSize
+	return m.data.Size()
+}
+
+func (m *message) Data() MessageData {
+	return m.data
 }
 
 func (m *message) TotalFilesSize() uint64 {
@@ -61,6 +66,7 @@ type ParserChannelResult interface {
 type parserChannel struct {
 	message       *message
 	response      *response
+	data          *messageData
 	messageReader *messageReader
 }
 
@@ -68,6 +74,10 @@ func newParserChannel() *parserChannel {
 	return &parserChannel{
 		messageReader: newMessageReader(),
 	}
+}
+
+func (p *parserChannel) DataDone() bool {
+	return p.data == nil || (*p.data).Done()
 }
 
 func (p *parserChannel) Idle() bool {
@@ -96,6 +106,14 @@ func (p *parserChannel) InitResponse(expectsResponse bool, hasStream bool) error
 	return nil
 }
 
+func (p *parserChannel) maybeEnd() {
+	// TODO: It should get rid of message only when all sub-data has been processed too
+	if p.DataDone() {
+		p.message = nil
+		p.data = nil
+	}
+}
+
 func (p *parserChannel) processMessage(b BufferedReader) (Message, error) {
 	done, err := p.messageReader.Get(p.message, b)
 	if err != nil && err != ErrNotReady {
@@ -104,8 +122,12 @@ func (p *parserChannel) processMessage(b BufferedReader) (Message, error) {
 		return nil, nil
 	}
 	m := p.message
-	// TODO: It should get rid of message only when all sub-data has been processed too
-	p.message = nil
+
+	if m.data.Size() > 0 {
+		p.data = m.data.(*messageData)
+	}
+
+	p.maybeEnd()
 	return m, nil
 }
 
@@ -120,5 +142,36 @@ func (p *parserChannel) Process(b BufferedReader) (ParserChannelResult, error) {
 		return p.processResponse(b)
 	} else {
 		return nil, errors.New("channel is not processing")
+	}
+}
+
+func (p *parserChannel) ProcessData(b BufferedReader) error {
+	if p.DataDone() {
+		return errors.New("channel does not expect any Data")
+	}
+
+	for {
+		step := b.Len()
+
+		if step == 0 {
+			p.maybeEnd()
+			return nil
+		}
+
+		// TODO: make it configurable?
+		if step > 65_536 {
+			step = 65_536
+		}
+
+		//buf := buffer_pool.Obtain(step)
+		buf := buffer_pool.ObtainUnsafe(step)
+		_, err := b.Read(buf.B) // TODO: Write directly to p.data?
+		if err != nil {
+			return err
+		}
+		err = p.data.push(buf)
+		if err != nil {
+			return err
+		}
 	}
 }

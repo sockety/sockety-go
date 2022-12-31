@@ -18,6 +18,7 @@ type BufferedReader interface {
 	MayHave(size offset) bool
 	ReadByte() (byte, error)
 	Read(target []byte) (offset, error)
+	Preload() error
 }
 
 func newBufferedReader(source io.Reader, buffer []byte) BufferedReader {
@@ -38,6 +39,15 @@ func (b *bufferedReader) loadBytes() error {
 	}
 	b.available += offset(bytes)
 	return nil
+}
+
+func (b *bufferedReader) Preload() error {
+	if b.available > 0 {
+		return nil
+	} else if b.eof {
+		return io.EOF
+	}
+	return b.loadBytes()
 }
 
 func (b *bufferedReader) ensure(size offset) error {
@@ -142,7 +152,7 @@ func (b *limitedBufferedReader) Len() offset {
 }
 
 func (b *limitedBufferedReader) MayHave(size offset) bool {
-	return size < b.size && b.b.MayHave(size)
+	return size <= b.size && b.b.MayHave(size)
 }
 
 func (b *limitedBufferedReader) ReadByte() (byte, error) {
@@ -159,4 +169,11 @@ func (b *limitedBufferedReader) Read(target []byte) (offset, error) {
 		return 0, err
 	}
 	return b.b.Read(target)
+}
+
+func (b *limitedBufferedReader) Preload() error {
+	if b.size == 0 {
+		return io.EOF
+	}
+	return b.b.Preload()
 }

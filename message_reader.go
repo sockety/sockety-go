@@ -113,32 +113,27 @@ func (p *messageReader) Get(message *message, r BufferedReader) (bool, error) {
 	if p.step == messageReaderStepDataSize {
 		switch p.flags & dataSizeBitmask {
 		case dataSizeNoneBits:
-			(*message).dataSize = 0
+			(*message).data = emptyMessageData
 		case dataSizeUint8Bits:
 			dataSize, err := p.dataSize8Reader.Get(r)
 			if err != nil {
 				return false, err
 			}
-			(*message).dataSize = uint64(dataSize)
+			(*message).data = newMessageData(offset(dataSize))
 		case dataSizeUint16Bits:
 			dataSize, err := p.dataSize16Reader.Get(r)
 			if err != nil {
 				return false, err
 			}
-			(*message).dataSize = uint64(dataSize)
+			(*message).data = newMessageData(offset(dataSize))
 		case dataSizeUint48Bits:
 			dataSize, err := p.dataSize48Reader.Get(r)
 			if err != nil {
 				return false, err
 			}
-			(*message).dataSize = uint64(dataSize)
+			(*message).data = newMessageData(offset(dataSize))
 		}
-
-		if p.flags&filesCountBitmask == filesCountNoneBits {
-			// TODO: Move to files header
-		} else {
-			p.step = messageReaderStepFilesCount
-		}
+		p.step = messageReaderStepFilesCount
 	}
 
 	if p.step == messageReaderStepFilesCount {
@@ -146,7 +141,6 @@ func (p *messageReader) Get(message *message, r BufferedReader) (bool, error) {
 		case filesCountNoneBits:
 			(*message).filesCount = 0
 			(*message).totalFilesSize = 0
-			// TODO: Move to files header
 		case filesCountUint8Bits:
 			filesCount, err := p.filesCount8Reader.Get(r)
 			if err != nil {

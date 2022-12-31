@@ -46,9 +46,12 @@ type Message interface {
 	DataSize() uint64
 	TotalFilesSize() uint64
 	FilesCount() uint32
-	Stream() io.Reader
 	ExpectsResponse() bool
+	Stream() io.Reader
+	Data() MessageData
 	// TODO: Responses
+
+	// TODO: Discard()
 }
 
 type Response interface {

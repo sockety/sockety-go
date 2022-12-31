@@ -78,7 +78,7 @@ func (s *streamReaderUnsafeBytes) Get(source streamReaderSource) ([]byte, error)
 	var n offset
 	var err error
 	if source.MayHave(offset(s.size - s.offset)) {
-		n, err = source.Read(s.buffer[s.offset:])
+		n, err = source.Read(s.buffer[s.offset:s.size])
 	} else {
 		n, err = source.Read(s.buffer[s.offset : offset(s.offset)+source.Len()])
 	}

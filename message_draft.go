@@ -10,8 +10,8 @@ import (
 type MessageDraft struct {
 	HasStream bool
 	Action    string
+	Data      []byte
 	//Files []FileTransfer // TODO
-	//Data []byte // TODO
 }
 
 // Constructor
@@ -23,6 +23,13 @@ func NewMessageDraft(action string) *MessageDraft {
 }
 
 // Builder pattern
+
+func (m *MessageDraft) RawData(data []byte) *MessageDraft {
+	m2 := *m
+	mCopy := m2
+	mCopy.Data = data
+	return &mCopy
+}
 
 //func (m *MessageDraft) Stream() MessageDraft {
 //	m2 := m
@@ -45,8 +52,7 @@ func send(m MessageDraft, id uuid.UUID, w Writer, expectsResponse bool) error {
 	actionSizeBytes := getNameSizeBytes(actionSize)
 
 	// Estimate data size
-	//dataSize := len(d.Data)
-	dataSize := 0
+	dataSize := len(m.Data)
 	dataSizeBytes := getDataSizeBytes(dataSize)
 
 	// Estimate files count & size
@@ -76,7 +82,7 @@ func send(m MessageDraft, id uuid.UUID, w Writer, expectsResponse bool) error {
 	p = p.UUID(id)
 	p = p.Uint(Uint48(actionSize), actionSizeBytes)
 	p = p.String(m.Action)
-	if dataSize > 0 {
+	if dataSizeBytes != 0 {
 		p = p.Uint(Uint48(dataSize), dataSizeBytes)
 	}
 	if filesCount > 0 {
@@ -84,8 +90,35 @@ func send(m MessageDraft, id uuid.UUID, w Writer, expectsResponse bool) error {
 		p = p.Uint(Uint48(totalFilesSize), totalFilesSizeBytes)
 	}
 
-	// TODO: Build packets for data and files asynchronously
-	return w.Write(p)
+	// Fast-track when there is no stream, data and files
+	if dataSizeBytes == 0 && filesCount == 0 && !m.HasStream {
+		return w.Write(p)
+	}
+
+	// Write message packet
+	channel, err := w.WriteAndObtainChannel(p)
+	if err != nil {
+		return err
+	}
+
+	// Write data
+	// TODO: Make it async
+	// TODO: Support splitting >uint32 size
+	err = w.WriteAtChannel(
+		channel,
+		newPacket(packetDataBits, offset(len(m.Data))).Bytes(m.Data),
+	)
+	if err != nil {
+		w.ReleaseChannel(channel)
+		return err
+	}
+
+	// TODO: Build packets for files too
+
+	// Release channel at the end
+	w.ReleaseChannel(channel)
+
+	return nil
 }
 
 func (m *MessageDraft) pass(writer Writer) error {
