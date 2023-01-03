@@ -110,6 +110,31 @@ func CreatePool[T any](count int, create func() T) func() T {
 	}
 }
 
+func MemStatDiff[T interface{ uint32 | uint64 }](a, b T) int64 {
+	return int64(a) - int64(b)
+}
+
+func ToMiB[T interface{ int64 | uint32 | uint64 }](b T) T {
+	return b / 1024 / 1024
+}
+
+func GetMemStats() runtime.MemStats {
+	runtime.GC()
+	runtime.GC()
+	runtime.GC()
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return m
+}
+
+func PrintMemStats(prevStats runtime.MemStats) {
+	m := GetMemStats()
+	fmt.Printf("\033[36mAlloc = %d MiB", ToMiB(MemStatDiff(m.Alloc, prevStats.Alloc)))
+	fmt.Printf("\tTotalAlloc = %d MiB", ToMiB(MemStatDiff(m.TotalAlloc, prevStats.TotalAlloc)))
+	fmt.Printf("\tSys = %d MiB", ToMiB(MemStatDiff(m.Sys, prevStats.Sys)))
+	fmt.Printf("\tNumGC = %d\033[0m\n", MemStatDiff(m.NumGC-3, prevStats.NumGC))
+}
+
 func RunBenchmark(b *testing.B, concurrency []int, handler func(run func(fn func()))) {
 	uuid.EnableRandPool()
 
@@ -117,6 +142,7 @@ func RunBenchmark(b *testing.B, concurrency []int, handler func(run func(fn func
 		if c < 1 {
 			panic("invalid concurrency")
 		} else if c == 1 {
+			prevStats := GetMemStats()
 			handler(func(fn func()) {
 				b.ResetTimer()
 				b.Run("NoConcurrency/CPUs", func(b2 *testing.B) {
@@ -125,11 +151,13 @@ func RunBenchmark(b *testing.B, concurrency []int, handler func(run func(fn func
 					}
 				})
 			})
+			PrintMemStats(prevStats)
 		} else {
 			cpus := runtime.GOMAXPROCS(0)
 			parallelism := c / cpus
 			realConcurrency := cpus * parallelism
 			name := fmt.Sprintf("Concurrency-%d/CPUs", realConcurrency)
+			prevStats := GetMemStats()
 			handler(func(fn func()) {
 				b.ResetTimer()
 				b.Run(name, func(b2 *testing.B) {
@@ -142,6 +170,7 @@ func RunBenchmark(b *testing.B, concurrency []int, handler func(run func(fn func
 					})
 				})
 			})
+			PrintMemStats(prevStats)
 		}
 	}
 }
