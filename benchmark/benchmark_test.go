@@ -470,13 +470,10 @@ func Benchmark_Send_PoolCPU(b *testing.B) {
 
 func Benchmark_Send_PoolCPU_1MB_Data(b *testing.B) {
 	RunDefaultBenchmark(b, func(run func(fn func())) {
-		pool := NewBufferPool(1024 * 1024)
 		server := PrepareServer(func(c sockety.Conn) {
 			for m := range c.Messages() {
 				go func(m sockety.Message) {
-					buf := pool.Get()
-					io.ReadFull(m.Data(), buf)
-					pool.Put(buf)
+					io.Copy(io.Discard, m.Data())
 				}(m)
 			}
 		})
@@ -493,16 +490,13 @@ func Benchmark_Send_PoolCPU_1MB_Data(b *testing.B) {
 
 func Benchmark_Send_PoolCPU_4MB_Data(b *testing.B) {
 	RunDefaultBenchmark(b, func(run func(fn func())) {
-		pool := NewBufferPool(4 * 1024 * 1024)
 		server := PrepareServer(func(c sockety.Conn) {
 			//for x := range c.Messages() {
 			//	x.Discard()
 			//}
 			for m := range c.Messages() {
 				go func(m sockety.Message) {
-					buf := pool.Get()
-					io.ReadFull(m.Data(), buf)
-					pool.Put(buf)
+					io.Copy(io.Discard, m.Data())
 				}(m)
 			}
 		})
