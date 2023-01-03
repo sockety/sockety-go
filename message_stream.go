@@ -44,7 +44,7 @@ func (m *messageStream) push(p *bytebufferpool.ByteBuffer) error {
 
 func (m *messageStream) close() error {
 	m.done.Close()
-	putOptional(m.ch, struct{}{})
+	close(m.ch)
 	return nil
 }
 
