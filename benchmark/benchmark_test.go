@@ -132,8 +132,8 @@ func PrintMemStats(prevStats runtime.MemStats) {
 	m := GetMemStats()
 	fmt.Printf("\033[36mAlloc = %d MiB", ToMiB(MemStatDiff(m.Alloc, prevStats.Alloc)))
 	fmt.Printf("\tTotalAlloc = %d MiB", ToMiB(MemStatDiff(m.TotalAlloc, prevStats.TotalAlloc)))
-	fmt.Printf("\tSys = %d MiB", ToMiB(MemStatDiff(m.Sys, prevStats.Sys)))
-	fmt.Printf("\tNumGC = %d\033[0m\n", MemStatDiff(m.NumGC-3, prevStats.NumGC))
+	fmt.Printf("\tNumGC = %d", MemStatDiff(m.NumGC-3, prevStats.NumGC))
+	fmt.Printf("\t\033[1;30mSys = %d MiB\033[0m\n", ToMiB(m.Sys))
 }
 
 func RunBenchmark(b *testing.B, concurrency []int, handler func(run func(fn func()))) {
