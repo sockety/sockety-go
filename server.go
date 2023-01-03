@@ -111,10 +111,11 @@ func (s *server) acceptConnections(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			listener := *s.listener.Load()
-			if listener == nil {
+			listenerPointer := s.listener.Load()
+			if listenerPointer == nil || *listenerPointer == nil {
 				return
 			}
+			listener := *listenerPointer
 
 			raw, err := listener.Accept()
 			if err != nil {
