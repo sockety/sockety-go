@@ -2,7 +2,6 @@ package sockety
 
 import (
 	"context"
-	"fmt"
 	"github.com/google/uuid"
 	"github.com/sockety/sockety-go/internal/done_signal"
 	"io"
@@ -133,7 +132,6 @@ func NewConn(parentCtx context.Context, rw io.ReadWriter, options *ConnOptions) 
 	// TODO: Read connection header
 	header, err := p.ReadHeader()
 	if err != nil {
-		fmt.Println("reading conneciton header", err)
 		return nil, err
 	}
 	if header.Channels < writeChannels {
