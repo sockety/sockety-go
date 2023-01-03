@@ -7,14 +7,36 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/sockety/sockety-go"
-	"github.com/sockety/sockety-go/internal/buffer_pool"
 	"io"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
 
 // Utilities
+
+type BufferPool struct {
+	b sync.Pool
+}
+
+func NewBufferPool(size uint32) *BufferPool {
+	return &BufferPool{
+		b: sync.Pool{
+			New: func() interface{} {
+				return make([]byte, size)
+			},
+		},
+	}
+}
+
+func (p *BufferPool) Get() []byte {
+	return p.b.Get().([]byte)
+}
+
+func (p *BufferPool) Put(b []byte) {
+	p.b.Put(b)
+}
 
 type MockReadWriter struct {
 	Reader io.Reader
@@ -448,12 +470,13 @@ func Benchmark_Send_PoolCPU(b *testing.B) {
 
 func Benchmark_Send_PoolCPU_1MB_Data(b *testing.B) {
 	RunDefaultBenchmark(b, func(run func(fn func())) {
+		pool := NewBufferPool(1024 * 1024)
 		server := PrepareServer(func(c sockety.Conn) {
 			for m := range c.Messages() {
 				go func(m sockety.Message) {
-					buf := buffer_pool.ObtainUnsafe(1024 * 1024)
-					io.ReadFull(m.Data(), buf.B)
-					buffer_pool.Release(buf)
+					buf := pool.Get()
+					io.ReadFull(m.Data(), buf)
+					pool.Put(buf)
 				}(m)
 			}
 		})
@@ -470,15 +493,16 @@ func Benchmark_Send_PoolCPU_1MB_Data(b *testing.B) {
 
 func Benchmark_Send_PoolCPU_4MB_Data(b *testing.B) {
 	RunDefaultBenchmark(b, func(run func(fn func())) {
+		pool := NewBufferPool(4 * 1024 * 1024)
 		server := PrepareServer(func(c sockety.Conn) {
 			//for x := range c.Messages() {
 			//	x.Discard()
 			//}
 			for m := range c.Messages() {
 				go func(m sockety.Message) {
-					buf := buffer_pool.ObtainUnsafe(1024 * 1024)
-					io.ReadFull(m.Data(), buf.B)
-					buffer_pool.Release(buf)
+					buf := pool.Get()
+					io.ReadFull(m.Data(), buf)
+					pool.Put(buf)
 				}(m)
 			}
 		})
