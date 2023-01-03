@@ -44,7 +44,10 @@ func NewWriter(target io.Writer, options WriterOptions) Writer {
 }
 
 func (w *writer) ObtainChannel() ChannelID {
-	return w.channels.Reserve()
+	w.channeledMu.Lock()
+	channel := w.channels.Reserve()
+	w.channeledMu.Unlock()
+	return channel
 }
 
 func (w *writer) ReleaseChannel(channel ChannelID) {
