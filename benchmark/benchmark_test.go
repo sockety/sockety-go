@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/sockety/sockety-go"
+	"github.com/sockety/sockety-go/internal/buffer_pool"
 	"io"
 	"runtime"
 	"sync/atomic"
@@ -348,7 +349,7 @@ func Benchmark_Parse_1MB(b *testing.B) {
 		buf := make([]byte, 1024*1024)
 		go func() {
 			for m := range conn.Messages() {
-				io.ReadFull(m.Data(), buf)
+				go io.ReadFull(m.Data(), buf)
 			}
 		}()
 
@@ -448,7 +449,12 @@ func Benchmark_Send_PoolCPU(b *testing.B) {
 func Benchmark_Send_PoolCPU_1MB_Data(b *testing.B) {
 	RunDefaultBenchmark(b, func(run func(fn func())) {
 		server := PrepareServer(func(c sockety.Conn) {
-			for range c.Messages() {
+			for m := range c.Messages() {
+				go func(m sockety.Message) {
+					buf := buffer_pool.ObtainUnsafe(1024 * 1024)
+					io.ReadFull(m.Data(), buf.B)
+					buffer_pool.Release(buf)
+				}(m)
 			}
 		})
 		defer server.Close()
@@ -468,9 +474,12 @@ func Benchmark_Send_PoolCPU_4MB_Data(b *testing.B) {
 			//for x := range c.Messages() {
 			//	x.Discard()
 			//}
-			buf := make([]byte, 1024*1024)
 			for m := range c.Messages() {
-				io.ReadFull(m.Data(), buf)
+				go func(m sockety.Message) {
+					buf := buffer_pool.ObtainUnsafe(1024 * 1024)
+					io.ReadFull(m.Data(), buf.B)
+					buffer_pool.Release(buf)
+				}(m)
 			}
 		})
 		defer server.Close()
