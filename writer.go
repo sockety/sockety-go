@@ -25,6 +25,7 @@ type Writer interface {
 	WriteStandalone(p packet) error
 	Write(p packet) error
 	WriteAndObtainChannel(p packet) (ChannelID, error)
+	WriteRawAtChannel(channel ChannelID, data []byte) error
 	WriteAtChannel(channel ChannelID, p packet) error
 	WriteAndReleaseChannel(channel ChannelID, p packet) error
 }
@@ -96,10 +97,15 @@ func (w *writer) WriteAndObtainChannel(p packet) (ChannelID, error) {
 
 // TODO: Think if it's possible to unlock immediately when Write is buffered
 func (w *writer) WriteAtChannel(channel ChannelID, p packet) error {
-	w.channeledMu.Lock()
-	err := w.unsafeWriteAtChannel(channel, p.GetBytes())
-	w.channeledMu.Unlock()
+	err := w.WriteRawAtChannel(channel, p.GetBytes())
 	p.Free()
+	return err
+}
+
+func (w *writer) WriteRawAtChannel(channel ChannelID, data []byte) error {
+	w.channeledMu.Lock()
+	err := w.unsafeWriteAtChannel(channel, data)
+	w.channeledMu.Unlock()
 	return err
 }
 
