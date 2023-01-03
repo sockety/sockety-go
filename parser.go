@@ -171,8 +171,10 @@ func (p *parser) Read() (ParserResult, error) {
 			// TODO: Handle timeout
 		case packetGoAwayBits:
 			// TODO: Handle go away
+			return nil, errors.New("go away packet not implemented yet")
 		case packetAbortBits:
 			// TODO: Abort
+			return nil, errors.New("abort packet not implemented yet")
 		case packetChannelLowBits:
 			p.currentChannel, err = p.channel(uint16(signature & 0b00001111))
 			if err != nil {
@@ -205,9 +207,13 @@ func (p *parser) Read() (ParserResult, error) {
 			p.sub.size = offset(packetSize)
 			return p.currentChannel.Process(p.sub)
 		case packetResponseBits:
+			return nil, errors.New("response packet not implemented yet")
 		case packetContinueBits:
+			return nil, errors.New("continue packet not implemented yet")
 		case packetFastReplyLowBits:
+			return nil, errors.New("fast reply low packet not implemented yet")
 		case packetFastReplyHighBits:
+			return nil, errors.New("fast reply high packet not implemented yet")
 		case packetDataBits:
 			packetSize, err := getPacketSize(p, signature, p.reader)
 			if err != nil {
@@ -220,7 +226,11 @@ func (p *parser) Read() (ParserResult, error) {
 		case packetStreamBits:
 		case packetStreamEndBits:
 		case packetFileBits:
+			return nil, errors.New("file packet not implemented yet")
 		case packetFileEndBits:
+			return nil, errors.New("file end packet not implemented yet")
+		default:
+			return nil, fmt.Errorf("unknown packet signature: %d", signature)
 		}
 	}
 }
