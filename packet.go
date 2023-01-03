@@ -13,25 +13,21 @@ type packet struct {
 
 func newPacket(signature uint8, size offset) packet {
 	if size <= MaxUint8 {
-		//buf := buffer_pool.Obtain(uint64(size) + 2)
 		buf := buffer_pool.ObtainUnsafe(uint64(size) + 2)
 		buf.B[0] = signature | packetSizeUint8Bits
 		buf.B[1] = uint8(size)
 		return packet{b: buf, o: 2}
 	} else if size <= MaxUint16 {
-		//buf := buffer_pool.Obtain(uint64(size) + 3)
 		buf := buffer_pool.ObtainUnsafe(uint64(size) + 3)
 		buf.B[0] = signature | packetSizeUint16Bits
 		writeBytes.Uint16(buf.B, 1, uint16(size))
 		return packet{b: buf, o: 3}
 	} else if size <= MaxUint24 {
-		//buf := buffer_pool.Obtain(uint64(size) + 4)
 		buf := buffer_pool.ObtainUnsafe(uint64(size) + 4)
 		buf.B[0] = signature | packetSizeUint24Bits
 		writeBytes.Uint24(buf.B, 1, Uint24(size))
 		return packet{b: buf, o: 4}
 	} else {
-		//buf := buffer_pool.Obtain(uint64(size) + 5)
 		buf := buffer_pool.ObtainUnsafe(uint64(size) + 5)
 		buf.B[0] = signature | packetSizeUint32Bits
 		writeBytes.Uint32(buf.B, 1, uint32(size))
