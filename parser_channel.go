@@ -163,7 +163,6 @@ func (p *parserChannel) ProcessData(b BufferedReader) error {
 			step = 65_536
 		}
 
-		//buf := buffer_pool.Obtain(step)
 		buf := buffer_pool.ObtainUnsafe(step)
 		_, err := b.Read(buf.B) // TODO: Write directly to p.data?
 		if err != nil {
