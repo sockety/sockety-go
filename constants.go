@@ -58,7 +58,7 @@ const (
 	packetDataBits          = 0b11100000
 	packetFileBits          = 0b11000000
 	packetFileEndBits       = 0b11010000
-	packetStreamBits        = 0b0111000
+	packetStreamBits        = 0b01110000
 	packetStreamEndBits     = 0b10000000
 	packetMessageBits       = 0b00100000
 	packetResponseBits      = 0b01010000
