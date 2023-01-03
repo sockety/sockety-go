@@ -15,6 +15,7 @@ type ParserOptions struct {
 const (
 	subParserModeHeader = iota
 	subParserModeData
+	subParserModeStream
 )
 
 type parser struct {
@@ -155,6 +156,8 @@ func (p *parser) Read() (ParserResult, error) {
 			return p.currentChannel.Process(p.sub)
 		case subParserModeData:
 			return nil, p.currentChannel.ProcessData(p.sub)
+		case subParserModeStream:
+			return nil, p.currentChannel.ProcessStream(p.sub)
 		default:
 			panic("impossible path")
 		}
@@ -224,7 +227,16 @@ func (p *parser) Read() (ParserResult, error) {
 			p.sub.size = offset(packetSize)
 			return nil, p.currentChannel.ProcessData(p.sub)
 		case packetStreamBits:
+			packetSize, err := getPacketSize(p, signature, p.reader)
+			if err != nil {
+				return nil, err
+			}
+
+			p.subMode = subParserModeStream
+			p.sub.size = offset(packetSize)
+			return nil, p.currentChannel.ProcessStream(p.sub)
 		case packetStreamEndBits:
+			return nil, p.currentChannel.EndStream()
 		case packetFileBits:
 			return nil, errors.New("file packet not implemented yet")
 		case packetFileEndBits:

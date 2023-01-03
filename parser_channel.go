@@ -10,8 +10,8 @@ import (
 // TODO: Include reference to connection
 // TODO: Consider single byte array instead of fields list - it should decrease size (i.e. for simple "ping" action - from 80B to ~40B)
 type message struct {
-	stream          io.Reader
 	data            MessageData
+	stream          MessageStream
 	id              uuid.UUID
 	action          string
 	totalFilesSize  uint64
@@ -43,7 +43,7 @@ func (m *message) FilesCount() uint32 {
 	return m.filesCount
 }
 
-func (m *message) Stream() io.Reader {
+func (m *message) Stream() MessageStream {
 	return m.stream
 }
 
@@ -67,6 +67,7 @@ type parserChannel struct {
 	message       *message
 	response      *response
 	data          *messageData
+	stream        *messageStream
 	messageReader *messageReader
 }
 
@@ -77,7 +78,11 @@ func newParserChannel() *parserChannel {
 }
 
 func (p *parserChannel) DataDone() bool {
-	return p.data == nil || (*p.data).Done()
+	return p.data == nil || p.data.Done()
+}
+
+func (p *parserChannel) StreamDone() bool {
+	return p.stream == nil || p.stream.Done()
 }
 
 func (p *parserChannel) Idle() bool {
@@ -88,9 +93,15 @@ func (p *parserChannel) InitMessage(expectsResponse bool, hasStream bool) error 
 	if !p.Idle() {
 		return errors.New("channel is already processing")
 	}
+
+	var stream *messageStream
+	if hasStream {
+		stream = newMessageStream()
+	}
+
 	p.message = &message{
 		expectsResponse: expectsResponse,
-		//stream:       hasStream,
+		stream:          stream,
 	}
 	return nil
 }
@@ -99,18 +110,24 @@ func (p *parserChannel) InitResponse(expectsResponse bool, hasStream bool) error
 	if !p.Idle() {
 		return errors.New("channel is already processing")
 	}
+
+	var stream *messageStream
+	if hasStream {
+		stream = newMessageStream()
+	}
 	p.response = &response{
 		expectsResponse: expectsResponse,
-		//stream:       hasStream,
+		stream:          stream,
 	}
 	return nil
 }
 
 func (p *parserChannel) maybeEnd() {
 	// TODO: It should get rid of message only when all sub-data has been processed too
-	if p.DataDone() {
+	if p.DataDone() && p.StreamDone() {
 		p.message = nil
 		p.data = nil
+		p.stream = nil
 	}
 }
 
@@ -125,6 +142,10 @@ func (p *parserChannel) processMessage(b BufferedReader) (Message, error) {
 
 	if m.data.Size() > 0 {
 		p.data = m.data.(*messageData)
+	}
+
+	if m.stream != nil {
+		p.stream = m.stream.(*messageStream)
 	}
 
 	p.maybeEnd()
@@ -173,4 +194,39 @@ func (p *parserChannel) ProcessData(b BufferedReader) error {
 			return err
 		}
 	}
+}
+
+func (p *parserChannel) ProcessStream(b BufferedReader) error {
+	if p.StreamDone() {
+		return errors.New("channel does not expect any Stream")
+	}
+
+	for {
+		step := b.Len()
+
+		if step == 0 {
+			return nil
+		}
+
+		// TODO: make it configurable?
+		if step > 65_536 {
+			step = 65_536
+		}
+
+		buf := buffer_pool.ObtainUnsafe(step)
+		_, err := b.Read(buf.B) // TODO: Write directly to p.stream?
+		if err != nil {
+			return err
+		}
+		err = p.stream.push(buf)
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (p *parserChannel) EndStream() error {
+	err := p.stream.close()
+	p.maybeEnd()
+	return err
 }

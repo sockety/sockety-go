@@ -404,6 +404,23 @@ func Benchmark_Build_1MB(b *testing.B) {
 	})
 }
 
+func Benchmark_Build_1MB_Stream(b *testing.B) {
+	RunBenchmark(b, []int{1, 10, 100}, func(run func(fn func())) {
+		conn := createMockConn()
+		data := randomBytes(1024 * 1024)
+		message := sockety.NewMessageDraft("ping").Stream()
+
+		run(func() {
+			req := conn.Request(message)
+			go req.Send()
+			stream := req.Stream()
+			stream.Write(data)
+			stream.Close()
+			<-req.Done()
+		})
+	})
+}
+
 func Benchmark_Build_PoolCPU(b *testing.B) {
 	RunBenchmark(b, []int{1, 10, 100}, func(run func(fn func())) {
 		conn := CreatePool(runtime.GOMAXPROCS(0), createMockConn)
@@ -464,6 +481,31 @@ func Benchmark_Send_PoolCPU(b *testing.B) {
 
 		run(func() {
 			client().Pass(message)
+		})
+	})
+}
+
+func Benchmark_Send_PoolCPU_1MB_Stream(b *testing.B) {
+	RunDefaultBenchmark(b, func(run func(fn func())) {
+		server := PrepareServer(func(c sockety.Conn) {
+			for m := range c.Messages() {
+				go func(m sockety.Message) {
+					io.Copy(io.Discard, m.Stream())
+				}(m)
+			}
+		})
+		defer server.Close()
+		data := randomBytes(1024 * 1024)
+		client := CreatePool(runtime.GOMAXPROCS(0), PrepareClient)
+		message := sockety.NewMessageDraft("ping").Stream()
+
+		run(func() {
+			req := client().Request(message)
+			go req.Send()
+			stream := req.Stream()
+			stream.Write(data)
+			stream.Close()
+			<-req.Done()
 		})
 	})
 }

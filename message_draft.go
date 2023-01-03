@@ -1,8 +1,11 @@
 package sockety
 
 import (
+	"errors"
 	"github.com/google/uuid"
+	"github.com/sockety/sockety-go/internal/done_signal"
 	"io"
+	"sync"
 )
 
 // TODO: Consider with pointers
@@ -31,21 +34,23 @@ func (m *MessageDraft) RawData(data []byte) *MessageDraft {
 	return &mCopy
 }
 
-//func (m *MessageDraft) Stream() MessageDraft {
-//	m2 := m
-//	m2.HasStream = true
-//	return m2
-//}
-//
-//func (m *MessageDraft) NoStream() MessageDraft {
-//	m2 := m
-//	m2.HasStream = false
-//	return m2
-//}
+func (m *MessageDraft) Stream() *MessageDraft {
+	m2 := *m
+	mCopy := m2
+	mCopy.HasStream = true
+	return &mCopy
+}
+
+func (m *MessageDraft) NoStream() *MessageDraft {
+	m2 := *m
+	mCopy := m2
+	mCopy.HasStream = true
+	return &mCopy
+}
 
 // Producer interface
 
-func send(m MessageDraft, id uuid.UUID, w Writer, expectsResponse bool) error {
+func send(m MessageDraft, id uuid.UUID, w Writer, stream *messageStreamWriter, providedChannel *ChannelID, expectsResponse bool) error {
 	// TODO: Cache calculations (?)
 	// Estimate action size
 	actionSize := len(m.Action)
@@ -96,40 +101,80 @@ func send(m MessageDraft, id uuid.UUID, w Writer, expectsResponse bool) error {
 	}
 
 	// Write message packet
-	channel, err := w.WriteAndObtainChannel(p)
+	var channel ChannelID
+	if providedChannel == nil {
+		channel = w.ObtainChannel()
+	} else {
+		channel = *providedChannel
+	}
+	err := w.WriteAtChannel(channel, p)
 	if err != nil {
 		return err
 	}
 
+	// Prepare wait group for all async message parts
+	wg := sync.WaitGroup{}
+	var finalErr error
+
 	// Write data
-	// TODO: Make it async
-	// TODO: Support splitting >uint32 size
-	err = w.WriteAtChannel(
-		channel,
-		newPacket(packetDataBits, offset(len(m.Data))).Bytes(m.Data),
-	)
-	if err != nil {
-		w.ReleaseChannel(channel)
-		return err
+	if dataSizeBytes > 0 {
+		wg.Add(1)
+
+		// TODO: Support splitting >uint32 size
+		// TODO: Consider worker pools
+		go func() {
+			err = w.WriteExternalWithSignatureAtChannel(channel, packetDataBits, m.Data)
+			if err != nil {
+				finalErr = err
+			}
+			wg.Done()
+		}()
+	}
+
+	// Write stream
+	if m.HasStream {
+		// Fast-track when there is no stream, but needs to be simulated
+		if stream == nil {
+			err = w.WriteRawAtChannel(channel, []byte{packetStreamEndBits})
+			if err != nil {
+				finalErr = err
+			}
+		} else {
+			wg.Add(1)
+
+			// TODO: Support splitting >uint32 size
+			go func() {
+				stream.mu.Unlock() // Start accepting data in Stream
+				<-stream.Done()
+				err = stream.Err()
+				if err != nil {
+					finalErr = err
+				}
+				wg.Done()
+			}()
+		}
 	}
 
 	// TODO: Build packets for files too
 
-	// Release channel at the end
+	// Wait for all parts sent and notify
+	wg.Wait()
 	w.ReleaseChannel(channel)
 
-	return nil
+	return finalErr
 }
 
 func (m *MessageDraft) pass(writer Writer) error {
-	return send(*m, uuid.New(), writer, false)
+	return send(*m, uuid.New(), writer, nil, nil, false)
 }
 
 func (m *MessageDraft) create(writer Writer) Request {
 	return &messageRequest{
-		id: uuid.New(),
-		w:  writer,
-		m:  m,
+		id:        uuid.New(),
+		w:         writer,
+		m:         m,
+		initiated: done_signal.New(),
+		done:      done_signal.New(),
 	}
 }
 
@@ -147,19 +192,14 @@ func (m *MessageDraft) PassTo(c Conn) error {
 	panic("passed connection without internal producer's support")
 }
 
-// TODO: Consider if it makes sense at all
-func (m *MessageDraft) RequestToAndSend(c Conn) error {
-	if cc, ok := c.(*conn); ok {
-		return send(*m, uuid.New(), cc.w, true)
-	}
-	panic("passed connection without internal producer's support")
-	//return m.RequestTo(c).Send()
-}
-
 type messageRequest struct {
-	id uuid.UUID
-	m  *MessageDraft
-	w  Writer
+	id        uuid.UUID
+	m         *MessageDraft
+	w         Writer
+	mu        sync.Mutex
+	initiated *done_signal.DoneSignal
+	done      *done_signal.DoneSignal
+	stream    *messageStreamWriter
 }
 
 func (m *messageRequest) Id() uuid.UUID {
@@ -167,20 +207,39 @@ func (m *messageRequest) Id() uuid.UUID {
 }
 
 func (m *messageRequest) Send() error {
-	return send(*m.m, m.id, m.w, true)
+	// Allow sending request only once
+	if !m.mu.TryLock() {
+		return errors.New("request is already sent")
+	}
+
+	// If stream is expected, obtain channel and prepare stream
+	if m.m.HasStream {
+		channel := m.w.ObtainChannel()
+		m.stream = newMessageStreamWriter(channel, m.w)
+		m.initiated.Close()
+		err := send(*m.m, m.id, m.w, m.stream, &channel, true)
+		m.done.Close()
+		return err
+	}
+
+	// Otherwise, just send
+	err := send(*m.m, m.id, m.w, nil, nil, true)
+	m.done.Close()
+	return err
 }
 
-func (m *messageRequest) Stream() io.Writer {
-	panic("not implemented")
-	return nil
+func (m *messageRequest) Stream() io.WriteCloser {
+	if m.initiated.Load() {
+		return m.stream
+	}
+	<-m.initiated.Get()
+	return m.stream
 }
 
 func (m *messageRequest) Initiated() <-chan struct{} {
-	panic("not implemented")
-	return createReadChannel(struct{}{})
+	return m.initiated.Get()
 }
 
 func (m *messageRequest) Done() <-chan struct{} {
-	panic("not implemented")
-	return createReadChannel(struct{}{})
+	return m.done.Get()
 }

@@ -13,6 +13,7 @@ type writer struct {
 	target   io.Writer
 	channels ChannelManager
 
+	writeMu     sync.Mutex
 	channeledMu sync.Mutex
 }
 
@@ -55,8 +56,15 @@ func (w *writer) ReleaseChannel(channel ChannelID) {
 	w.channels.Release(channel)
 }
 
-func (w *writer) WriteRaw(data []byte) error {
+func (w *writer) unsafeWriteRaw(data []byte) error {
 	_, err := w.target.Write(data)
+	return err
+}
+
+func (w *writer) WriteRaw(data []byte) error {
+	w.writeMu.Lock()
+	err := w.unsafeWriteRaw(data)
+	w.writeMu.Unlock()
 	return err
 }
 
@@ -66,7 +74,19 @@ func (w *writer) unsafeWriteAtChannel(channel ChannelID, data []byte) error {
 	}
 
 	w.channels.SetCurrent(channel)
-	return w.WriteRaw(append(createSwitchChannelPacket(channel), data...))
+
+	w.writeMu.Lock()
+	err := w.unsafeWriteRaw(createSwitchChannelPacket(channel))
+	if err != nil {
+		w.writeMu.Unlock()
+		return err
+	}
+	err = w.unsafeWriteRaw(data)
+	w.writeMu.Unlock()
+	return err
+
+	// TODO: Benchmark alternative:
+	// return w.WriteRaw(append(createSwitchChannelPacket(channel), data...))
 }
 
 func (w *writer) WriteStandalone(p packet) error {
@@ -161,7 +181,7 @@ func (w *writer) WriteExternalWithSignatureAtChannel(channel ChannelID, signatur
 		return err
 	}
 
-	err = w.WriteRaw(data)
+	err = w.unsafeWriteRaw(data)
 	w.channeledMu.Unlock()
 	return err
 }

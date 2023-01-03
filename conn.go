@@ -46,7 +46,7 @@ type Message interface {
 	TotalFilesSize() uint64
 	FilesCount() uint32
 	ExpectsResponse() bool
-	Stream() io.Reader
+	Stream() MessageStream
 	Data() MessageData
 	// TODO: Responses
 
@@ -61,6 +61,7 @@ type GoAway interface {
 
 type Request interface {
 	Id() uuid.UUID
+	Stream() io.WriteCloser
 	Send() error
 	Initiated() <-chan struct{}
 	Done() <-chan struct{}
