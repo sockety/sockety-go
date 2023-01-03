@@ -28,6 +28,7 @@ type Writer interface {
 	WriteRawAtChannel(channel ChannelID, data []byte) error
 	WriteAtChannel(channel ChannelID, p packet) error
 	WriteAndReleaseChannel(channel ChannelID, p packet) error
+	WriteExternalWithSignatureAtChannel(channel ChannelID, signature uint8, data []byte) error
 }
 
 func NewWriter(target io.Writer, options WriterOptions) Writer {
@@ -119,5 +120,48 @@ func (w *writer) WriteAndReleaseChannel(channel ChannelID, p packet) error {
 	w.channeledMu.Unlock()
 	w.ReleaseChannel(channel)
 	p.Free()
+	return err
+}
+
+func (w *writer) WriteExternalWithSignatureAtChannel(channel ChannelID, signature uint8, data []byte) error {
+	w.channeledMu.Lock()
+
+	size := offset(len(data))
+	var err error
+	if size <= MaxUint8 {
+		err = w.unsafeWriteAtChannel(channel, []byte{
+			signature | packetSizeUint8Bits,
+			byte(size),
+		})
+	} else if size <= MaxUint16 {
+		err = w.unsafeWriteAtChannel(channel, []byte{
+			signature | packetSizeUint16Bits,
+			byte(size),
+			byte(size >> 8),
+		})
+	} else if size <= MaxUint24 {
+		err = w.unsafeWriteAtChannel(channel, []byte{
+			signature | packetSizeUint24Bits,
+			byte(size),
+			byte(size >> 8),
+			byte(size >> 16),
+		})
+	} else {
+		err = w.unsafeWriteAtChannel(channel, []byte{
+			signature | packetSizeUint32Bits,
+			byte(size),
+			byte(size >> 8),
+			byte(size >> 16),
+			byte(size >> 24),
+		})
+	}
+
+	if err != nil {
+		w.channeledMu.Unlock()
+		return err
+	}
+
+	err = w.WriteRaw(data)
+	w.channeledMu.Unlock()
 	return err
 }
