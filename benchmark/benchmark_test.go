@@ -137,8 +137,12 @@ func MemStatDiff[T interface{ uint32 | uint64 }](a, b T) int64 {
 	return int64(a) - int64(b)
 }
 
+func ToKiB[T interface{ int64 | uint32 | uint64 }](b T) T {
+	return b / 1024
+}
+
 func ToMiB[T interface{ int64 | uint32 | uint64 }](b T) T {
-	return b / 1024 / 1024
+	return ToKiB(b) / 1024
 }
 
 func GetMemStats() runtime.MemStats {
@@ -152,7 +156,8 @@ func GetMemStats() runtime.MemStats {
 
 func PrintMemStats(prevStats runtime.MemStats) {
 	m := GetMemStats()
-	fmt.Printf("\033[36mAlloc = %d MiB", ToMiB(MemStatDiff(m.Alloc, prevStats.Alloc)))
+	fmt.Printf("\033[36mAlloc = %d KiB", ToKiB(MemStatDiff(m.Alloc, prevStats.Alloc)))
+	fmt.Printf("\tInUse = %d KiB", ToKiB(MemStatDiff(m.HeapInuse, prevStats.HeapInuse)))
 	fmt.Printf("\tTotalAlloc = %d MiB", ToMiB(MemStatDiff(m.TotalAlloc, prevStats.TotalAlloc)))
 	fmt.Printf("\tNumGC = %d", MemStatDiff(m.NumGC-3, prevStats.NumGC))
 	fmt.Printf("\t\033[1;30mSys = %d MiB\033[0m\n", ToMiB(m.Sys))
