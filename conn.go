@@ -87,6 +87,8 @@ type Conn interface {
 	// RequestAndWaitForResponse(p ProducerWithRequest) Response // TODO: later
 
 	Close() error
+	// TODO: Pause() error
+	// TODO: Resume() error
 
 	ReadDone() <-chan struct{}
 	ConnectionClosed() <-chan struct{}
@@ -213,6 +215,10 @@ func (c *conn) handle() {
 
 				// TODO: Expose errors
 				panic(err)
+			}
+
+			if c.done.Load() {
+				return
 			}
 
 			switch item := v.(type) {
