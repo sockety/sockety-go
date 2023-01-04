@@ -39,13 +39,17 @@ func (m *messageData) push(p *bytebufferpool.ByteBuffer) error {
 	wrote := m.wrote + uint64(p.Len())
 	if wrote > m.size {
 		m.err = errors.New("malformed size")
-		putOptional(m.ch, struct{}{})
+		close(m.ch)
 		m.mu.Unlock()
 		return m.err
 	}
 	m.buf = append(m.buf, p)
 	m.wrote = wrote
-	putOptional(m.ch, struct{}{})
+	if m.wrote == m.size {
+		close(m.ch)
+	} else {
+		putOptional(m.ch, struct{}{})
+	}
 	m.mu.Unlock()
 	return nil
 }
