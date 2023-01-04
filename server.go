@@ -174,6 +174,7 @@ func (s *server) Close() error {
 		return errors.New("server is not listening")
 	}
 	err := listener.Close()
+	s.ctxCancel()
 	s.listener.Store(nil)
 	s.listenerMu.Unlock()
 	return err
