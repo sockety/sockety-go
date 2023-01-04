@@ -144,6 +144,10 @@ func getPacketSize(p *parser, signature uint8, r BufferedReader) (uint32, error)
 }
 
 func (p *parser) Read() (ParserResult, error) {
+	if !p.reader.MayHave(1) {
+		return nil, io.EOF
+	}
+
 	if p.sub.size > 0 {
 		if p.sub.Len() == 0 {
 			err := p.sub.Preload()
