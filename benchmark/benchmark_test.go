@@ -45,19 +45,23 @@ type MockReadWriteCloser struct {
 	Writer io.Writer
 }
 
-func (m MockReadWriteCloser) Write(b []byte) (int, error) {
+func (m *MockReadWriteCloser) Write(b []byte) (int, error) {
 	return m.Writer.Write(b)
 }
 
-func (m MockReadWriteCloser) Read(b []byte) (int, error) {
+func (m *MockReadWriteCloser) Read(b []byte) (int, error) {
 	if m.closed.Load() {
 		return 0, io.EOF
 	}
 	return m.Reader.Read(b)
 }
 
-func (m MockReadWriteCloser) Close() error {
-	m.closed.Store(true)
+func (m *MockReadWriteCloser) Close() error {
+	if !m.closed.Swap(true) {
+		if r, ok := m.Reader.(io.Closer); ok {
+			r.Close()
+		}
+	}
 	return nil
 }
 
@@ -111,6 +115,12 @@ func (r *RepeatReader) Repeat() {
 	r.data <- r.content
 }
 
+func (r *RepeatReader) Close() error {
+	close(r.remaining)
+	close(r.data)
+	return nil
+}
+
 func (r *RepeatReader) pass(target []byte, data []byte) (int, error) {
 	if len(data) <= len(target) {
 		copy(target, data)
@@ -126,7 +136,11 @@ func (r *RepeatReader) Read(target []byte) (int, error) {
 	if rem != nil {
 		return r.pass(target, rem)
 	}
-	return r.pass(target, <-r.data)
+	data, more := <-r.data
+	if more {
+		return r.pass(target, data)
+	}
+	return 0, io.EOF
 }
 
 func CreatePool[T any](count int, create func() T) func() T {
@@ -240,7 +254,7 @@ const maxChannels = 4_096
 // Test utilities
 
 func createMockConn() sockety.Conn {
-	target := MockReadWriteCloser{
+	target := &MockReadWriteCloser{
 		Reader: bytes.NewReader([]byte{227}),
 		Writer: io.Discard,
 	}
@@ -258,7 +272,7 @@ func createMockConn() sockety.Conn {
 func getMessageBytes(message sockety.Producer) []byte {
 	// Compute example byte array for the message
 	buffer := bytes.NewBuffer(make([]byte, 0))
-	target := MockReadWriteCloser{
+	target := &MockReadWriteCloser{
 		Reader: bytes.NewReader([]byte{227}),
 		Writer: buffer,
 	}
@@ -377,7 +391,7 @@ func Benchmark_Parse_One(b *testing.B) {
 
 	RunBenchmark(b, []int{1}, func(run func(fn func())) {
 		reader := newRepeatReader([]byte{227}, message)
-		target := MockReadWriteCloser{
+		target := &MockReadWriteCloser{
 			Reader: reader,
 			Writer: io.Discard,
 		}
@@ -405,7 +419,7 @@ func Benchmark_Parse_PoolCPU(b *testing.B) {
 		reader := CreatePool(runtime.GOMAXPROCS(0), func() *RepeatReader {
 			message := getMessageBytes(sockety.NewMessageDraft("ping"))
 			reader := newRepeatReader([]byte{227}, message)
-			target := MockReadWriteCloser{
+			target := &MockReadWriteCloser{
 				Reader: reader,
 				Writer: io.Discard,
 			}
@@ -438,7 +452,7 @@ func Benchmark_Parse_1MB(b *testing.B) {
 
 	RunBenchmark(b, []int{1}, func(run func(fn func())) {
 		reader := newRepeatReader([]byte{227}, message)
-		target := MockReadWriteCloser{
+		target := &MockReadWriteCloser{
 			Reader: reader,
 			Writer: io.Discard,
 		}
