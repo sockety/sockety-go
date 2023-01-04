@@ -295,7 +295,32 @@ func PrepareServer(handler func(c sockety.Conn)) sockety.Server {
 	return server
 }
 
-func HandleMessages(handler func(m sockety.Message)) func() {
+func HandleConnMessages(c sockety.Conn, handler func(m sockety.Message)) func() {
+	progress := uint32(0)
+	go func() {
+		for m := range c.Messages() {
+			atomic.AddUint32(&progress, 1)
+			go func(m sockety.Message) {
+				handler(m)
+				atomic.AddUint32(&progress, ^uint32(0))
+			}(m)
+		}
+	}()
+
+	return func() {
+		for {
+			<-time.After(300 * time.Millisecond)
+			left := atomic.LoadUint32(&progress)
+			if left == 0 {
+				break
+			}
+			fmt.Println("Waiting for finish of:", left)
+		}
+		c.Close()
+	}
+}
+
+func CreateServerHandler(handler func(m sockety.Message)) func() {
 	progress := uint32(0)
 	server := PrepareServer(func(c sockety.Conn) {
 		for m := range c.Messages() {
@@ -357,10 +382,9 @@ func Benchmark_Parse_One(b *testing.B) {
 		if err != nil {
 			panic(err)
 		}
-		go func() {
-			for range conn.Messages() {
-			}
-		}()
+		end := HandleConnMessages(conn, func(m sockety.Message) {
+		})
+		defer end()
 
 		run(func() {
 			reader.Repeat()
@@ -370,6 +394,7 @@ func Benchmark_Parse_One(b *testing.B) {
 
 func Benchmark_Parse_PoolCPU(b *testing.B) {
 	RunBenchmark(b, []int{1, runtime.GOMAXPROCS(0), runtime.GOMAXPROCS(0) * 2}, func(run func(fn func())) {
+		endFns := make([]func(), 0)
 		reader := CreatePool(runtime.GOMAXPROCS(0), func() *RepeatReader {
 			message := getMessageBytes(sockety.NewMessageDraft("ping"))
 			reader := newRepeatReader([]byte{227}, message)
@@ -385,13 +410,15 @@ func Benchmark_Parse_PoolCPU(b *testing.B) {
 			if err != nil {
 				panic(err)
 			}
-			go func() {
-				for range conn.Messages() {
-
-				}
-			}()
+			endFns = append(endFns, HandleConnMessages(conn, func(m sockety.Message) {}))
 			return reader
 		})
+
+		defer func() {
+			for _, fn := range endFns {
+				fn()
+			}
+		}()
 
 		run(func() {
 			reader().Repeat()
@@ -416,12 +443,10 @@ func Benchmark_Parse_1MB(b *testing.B) {
 		if err != nil {
 			panic(err)
 		}
-		buf := make([]byte, 1024*1024)
-		go func() {
-			for m := range conn.Messages() {
-				go io.ReadFull(m.Data(), buf)
-			}
-		}()
+		end := HandleConnMessages(conn, func(m sockety.Message) {
+			io.Copy(io.Discard, m.Data())
+		})
+		defer end()
 
 		run(func() {
 			reader.Repeat()
@@ -503,11 +528,9 @@ func Benchmark_Build_Request(b *testing.B) {
 
 func Benchmark_Send(b *testing.B) {
 	RunBenchmark(b, []int{1, 10}, func(run func(fn func())) {
-		server := PrepareServer(func(c sockety.Conn) {
-			for range c.Messages() {
-			}
+		end := CreateServerHandler(func(m sockety.Message) {
 		})
-		defer server.Close()
+		defer end()
 		client := PrepareClient()
 		message := sockety.NewMessageDraft("ping")
 
@@ -519,7 +542,7 @@ func Benchmark_Send(b *testing.B) {
 
 func Benchmark_Send_PoolCPU(b *testing.B) {
 	RunDefaultBenchmark(b, func(run func(fn func())) {
-		end := HandleMessages(func(m sockety.Message) {
+		end := CreateServerHandler(func(m sockety.Message) {
 		})
 		defer end()
 		client := CreatePool(runtime.GOMAXPROCS(0), PrepareClient)
@@ -533,7 +556,7 @@ func Benchmark_Send_PoolCPU(b *testing.B) {
 
 func Benchmark_Send_PoolCPU_1MB_Stream(b *testing.B) {
 	RunDefaultBenchmark(b, func(run func(fn func())) {
-		end := HandleMessages(func(m sockety.Message) {
+		end := CreateServerHandler(func(m sockety.Message) {
 			io.Copy(io.Discard, m.Stream())
 		})
 		defer end()
@@ -554,7 +577,7 @@ func Benchmark_Send_PoolCPU_1MB_Stream(b *testing.B) {
 
 func Benchmark_Send_PoolCPU_1MB_Data(b *testing.B) {
 	RunDefaultBenchmark(b, func(run func(fn func())) {
-		end := HandleMessages(func(m sockety.Message) {
+		end := CreateServerHandler(func(m sockety.Message) {
 			io.Copy(io.Discard, m.Data())
 		})
 		defer end()
@@ -570,7 +593,7 @@ func Benchmark_Send_PoolCPU_1MB_Data(b *testing.B) {
 
 func Benchmark_Send_PoolCPU_4MB_Data(b *testing.B) {
 	RunDefaultBenchmark(b, func(run func(fn func())) {
-		end := HandleMessages(func(m sockety.Message) {
+		end := CreateServerHandler(func(m sockety.Message) {
 			// m.Discard()
 			io.Copy(io.Discard, m.Data())
 		})
