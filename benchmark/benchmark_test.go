@@ -170,25 +170,31 @@ func RunBenchmark(b *testing.B, concurrency []int, handler func(run func(fn func
 		if c < 1 {
 			panic("invalid concurrency")
 		} else if c == 1 {
+			var b2Copy *testing.B
 			prevStats := GetMemStats()
 			handler(func(fn func()) {
 				b.ResetTimer()
 				b.Run("NoConcurrency/CPUs", func(b2 *testing.B) {
+					b2Copy = b2
 					for i := 0; i < b2.N; i++ {
 						fn()
 					}
 				})
 			})
-			PrintMemStats(prevStats)
+			if b2Copy != nil && !b2Copy.Skipped() {
+				PrintMemStats(prevStats)
+			}
 		} else {
 			cpus := runtime.GOMAXPROCS(0)
 			parallelism := c / cpus
 			realConcurrency := cpus * parallelism
 			name := fmt.Sprintf("Concurrency-%d/CPUs", realConcurrency)
 			prevStats := GetMemStats()
+			var b2Copy *testing.B
 			handler(func(fn func()) {
 				b.ResetTimer()
 				b.Run(name, func(b2 *testing.B) {
+					b2Copy = b2
 					b2.SetParallelism(parallelism)
 					b2.ResetTimer()
 					b2.RunParallel(func(pb *testing.PB) {
@@ -198,7 +204,9 @@ func RunBenchmark(b *testing.B, concurrency []int, handler func(run func(fn func
 					})
 				})
 			})
-			PrintMemStats(prevStats)
+			if b2Copy != nil && !b2Copy.Skipped() {
+				PrintMemStats(prevStats)
+			}
 		}
 	}
 }
