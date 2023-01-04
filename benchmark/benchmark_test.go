@@ -143,7 +143,7 @@ func CreatePool[T any](count int, create func() T) func() T {
 	}
 }
 
-func MemStatDiff[T interface{ uint32 | uint64 }](a, b T) int64 {
+func StatDiff[T interface{ int | uint32 | uint64 }](a, b T) int64 {
 	return int64(a) - int64(b)
 }
 
@@ -155,21 +155,28 @@ func ToMiB[T interface{ int64 | uint32 | uint64 }](b T) T {
 	return ToKiB(b) / 1024
 }
 
-func GetMemStats() runtime.MemStats {
+type Stats struct {
+	runtime.MemStats
+	Goroutines int
+}
+
+func GetStats() Stats {
 	runtime.GC()
 	runtime.GC()
 	runtime.GC()
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	return m
+	goroutines := runtime.NumGoroutine()
+	return Stats{m, goroutines}
 }
 
-func PrintMemStats(prevStats runtime.MemStats) {
-	m := GetMemStats()
-	fmt.Printf("\033[36mAlloc = %d KiB", ToKiB(MemStatDiff(m.Alloc, prevStats.Alloc)))
-	fmt.Printf("\tInUse = %d KiB", ToKiB(MemStatDiff(m.HeapInuse, prevStats.HeapInuse)))
-	fmt.Printf("\tTotalAlloc = %d MiB", ToMiB(MemStatDiff(m.TotalAlloc, prevStats.TotalAlloc)))
-	fmt.Printf("\tNumGC = %d", MemStatDiff(m.NumGC-3, prevStats.NumGC))
+func PrintStats(prevStats Stats) {
+	m := GetStats()
+	fmt.Printf("\033[36mAlloc = %d KiB", ToKiB(StatDiff(m.Alloc, prevStats.Alloc)))
+	fmt.Printf("\tInUse = %d KiB", ToKiB(StatDiff(m.HeapInuse, prevStats.HeapInuse)))
+	fmt.Printf("\tTotalAlloc = %d MiB", ToMiB(StatDiff(m.TotalAlloc, prevStats.TotalAlloc)))
+	fmt.Printf("\tNumGC = %d", StatDiff(m.NumGC-3, prevStats.NumGC))
+	fmt.Printf("\tGoroutines = %d", StatDiff(m.Goroutines, prevStats.Goroutines))
 	fmt.Printf("\t\033[1;30mSys = %d MiB\033[0m\n", ToMiB(m.Sys))
 }
 
@@ -181,7 +188,7 @@ func RunBenchmark(b *testing.B, concurrency []int, handler func(run func(fn func
 			panic("invalid concurrency")
 		} else if c == 1 {
 			var b2Copy *testing.B
-			prevStats := GetMemStats()
+			prevStats := GetStats()
 			handler(func(fn func()) {
 				b.ResetTimer()
 				b.Run("NoConcurrency/CPUs", func(b2 *testing.B) {
@@ -192,14 +199,14 @@ func RunBenchmark(b *testing.B, concurrency []int, handler func(run func(fn func
 				})
 			})
 			if b2Copy != nil && !b2Copy.Skipped() {
-				PrintMemStats(prevStats)
+				PrintStats(prevStats)
 			}
 		} else {
 			cpus := runtime.GOMAXPROCS(0)
 			parallelism := c / cpus
 			realConcurrency := cpus * parallelism
 			name := fmt.Sprintf("Concurrency-%d/CPUs", realConcurrency)
-			prevStats := GetMemStats()
+			prevStats := GetStats()
 			var b2Copy *testing.B
 			handler(func(fn func()) {
 				b.ResetTimer()
@@ -215,7 +222,7 @@ func RunBenchmark(b *testing.B, concurrency []int, handler func(run func(fn func
 				})
 			})
 			if b2Copy != nil && !b2Copy.Skipped() {
-				PrintMemStats(prevStats)
+				PrintStats(prevStats)
 			}
 		}
 	}
