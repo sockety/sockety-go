@@ -175,12 +175,19 @@ func NewConn(parentCtx context.Context, rw io.ReadWriter, options *ConnOptions) 
 	}
 
 	// Start reading packets
+	go c.watchEnd()
 	go c.handle()
 
 	return c, nil
 }
 
 // Internals
+
+func (c *conn) watchEnd() {
+	<-c.ctx.Done()
+	c.markConnectionAsClosed()
+	c.markReadAsDone()
+}
 
 func (c *conn) handle() {
 	for {
@@ -239,6 +246,8 @@ func (c *conn) markReadAsDone() {
 }
 
 func (c *conn) markConnectionAsClosed() {
+	c.Close()
+
 	if c.closed.Close() && c.closed.Load() {
 		c.markAsDone()
 	}
