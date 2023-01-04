@@ -132,7 +132,7 @@ func NewConn(parentCtx context.Context, rw io.ReadWriteCloser, options *ConnOpti
 		return nil, err
 	}
 
-	// TODO: Read connection header
+	// Read connection header
 	header, err := p.ReadHeader()
 	if err != nil {
 		return nil, err
@@ -147,13 +147,7 @@ func NewConn(parentCtx context.Context, rw io.ReadWriteCloser, options *ConnOpti
 	}).(*writer)
 
 	// Set up channels for messages
-	// TODO: Test if that couldn't be just make(chan Message, options.BufferedMessages)
-	var messages chan Message
-	if options.BufferedMessages == 0 {
-		messages = make(chan Message)
-	} else {
-		messages = make(chan Message, options.BufferedMessages)
-	}
+	messages := make(chan Message, options.BufferedMessages)
 
 	// Set up the context
 	ctx, ctxCancel := context.WithCancel(parentCtx)
@@ -172,8 +166,8 @@ func NewConn(parentCtx context.Context, rw io.ReadWriteCloser, options *ConnOpti
 		done:     done_signal.New(),
 
 		messages:    messages,
-		responses:   make(chan Response),  // TODO: test if that's actually needed
-		fastReplies: make(chan FastReply), // TODO: test if that's actually needed
+		responses:   make(chan Response),
+		fastReplies: make(chan FastReply),
 	}
 
 	// Start reading packets
