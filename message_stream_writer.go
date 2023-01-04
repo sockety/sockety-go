@@ -3,15 +3,15 @@ package sockety
 import (
 	"errors"
 	"github.com/sockety/sockety-go/internal/done_signal"
+	"github.com/sockety/sockety-go/internal/fifo_mutex"
 	"io"
-	"sync"
 )
 
 type messageStreamWriter struct {
 	channel ChannelID
 	writer  Writer
 	done    *done_signal.DoneSignal
-	mu      sync.Mutex
+	mu      *fifo_mutex.FIFOMutex
 	err     error
 }
 
@@ -20,6 +20,7 @@ func newMessageStreamWriter(channel ChannelID, writer Writer) *messageStreamWrit
 	w := &messageStreamWriter{
 		channel: channel,
 		writer:  writer,
+		mu:      fifo_mutex.New(1),
 		done:    done_signal.New(),
 	}
 	w.mu.Lock() // Stream should be initially locked
