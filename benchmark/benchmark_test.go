@@ -39,17 +39,26 @@ func (p *BufferPool) Put(b []byte) {
 	p.b.Put(b)
 }
 
-type MockReadWriter struct {
+type MockReadWriteCloser struct {
+	closed atomic.Bool
 	Reader io.Reader
 	Writer io.Writer
 }
 
-func (m MockReadWriter) Write(b []byte) (int, error) {
+func (m MockReadWriteCloser) Write(b []byte) (int, error) {
 	return m.Writer.Write(b)
 }
 
-func (m MockReadWriter) Read(b []byte) (int, error) {
+func (m MockReadWriteCloser) Read(b []byte) (int, error) {
+	if m.closed.Load() {
+		return 0, io.EOF
+	}
 	return m.Reader.Read(b)
+}
+
+func (m MockReadWriteCloser) Close() error {
+	m.closed.Store(true)
+	return nil
 }
 
 type RepeatReader struct {
@@ -224,7 +233,7 @@ const maxChannels = 4_096
 // Test utilities
 
 func createMockConn() sockety.Conn {
-	target := MockReadWriter{
+	target := MockReadWriteCloser{
 		Reader: bytes.NewReader([]byte{227}),
 		Writer: io.Discard,
 	}
@@ -242,7 +251,7 @@ func createMockConn() sockety.Conn {
 func getMessageBytes(message sockety.Producer) []byte {
 	// Compute example byte array for the message
 	buffer := bytes.NewBuffer(make([]byte, 0))
-	target := MockReadWriter{
+	target := MockReadWriteCloser{
 		Reader: bytes.NewReader([]byte{227}),
 		Writer: buffer,
 	}
@@ -336,7 +345,7 @@ func Benchmark_Parse_One(b *testing.B) {
 
 	RunBenchmark(b, []int{1}, func(run func(fn func())) {
 		reader := newRepeatReader([]byte{227}, message)
-		target := MockReadWriter{
+		target := MockReadWriteCloser{
 			Reader: reader,
 			Writer: io.Discard,
 		}
@@ -364,7 +373,7 @@ func Benchmark_Parse_PoolCPU(b *testing.B) {
 		reader := CreatePool(runtime.GOMAXPROCS(0), func() *RepeatReader {
 			message := getMessageBytes(sockety.NewMessageDraft("ping"))
 			reader := newRepeatReader([]byte{227}, message)
-			target := MockReadWriter{
+			target := MockReadWriteCloser{
 				Reader: reader,
 				Writer: io.Discard,
 			}
@@ -395,7 +404,7 @@ func Benchmark_Parse_1MB(b *testing.B) {
 
 	RunBenchmark(b, []int{1}, func(run func(fn func())) {
 		reader := newRepeatReader([]byte{227}, message)
-		target := MockReadWriter{
+		target := MockReadWriteCloser{
 			Reader: reader,
 			Writer: io.Discard,
 		}

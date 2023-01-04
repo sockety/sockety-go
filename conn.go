@@ -20,7 +20,7 @@ type ConnOptions struct {
 
 type conn struct {
 	// Components
-	conn io.ReadWriter
+	conn io.ReadWriteCloser
 	w    *writer
 	p    *parser
 
@@ -99,7 +99,7 @@ type Conn interface {
 
 // Factories
 
-func NewConn(parentCtx context.Context, rw io.ReadWriter, options *ConnOptions) (Conn, error) {
+func NewConn(parentCtx context.Context, rw io.ReadWriteCloser, options *ConnOptions) (Conn, error) {
 	// Use default options
 	if options == nil {
 		options = &ConnOptions{}
@@ -296,11 +296,7 @@ func (c *conn) Close() error {
 	// TODO: When force is false, probably end streams and wait for finish
 	c.ctxCancel()
 
-	// Close the connection TODO: think if it's needed, given that ctx is cancelled
-	if cc, ok := c.conn.(net.Conn); ok {
-		return cc.Close()
-	}
-	return nil
+	return c.conn.Close()
 }
 
 func (c *conn) ReadDone() <-chan struct{} {
