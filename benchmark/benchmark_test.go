@@ -269,7 +269,11 @@ func createMockConn() sockety.Conn {
 	return conn
 }
 
-func getMessageBytes(message sockety.Producer) []byte {
+func getMessageBytes(message sockety.ProducerWithRequest) []byte {
+	return getMessageBytesWithStream(message, []byte(nil))
+}
+
+func getMessageBytesWithStream(message sockety.ProducerWithRequest, stream []byte) []byte {
 	// Compute example byte array for the message
 	buffer := bytes.NewBuffer(make([]byte, 0))
 	target := &MockReadWriteCloser{
@@ -280,10 +284,29 @@ func getMessageBytes(message sockety.Producer) []byte {
 	if err != nil {
 		panic(err)
 	}
-	err = conn.Pass(message)
-	if err != nil {
-		panic(err)
+	req := conn.Request(message)
+
+	ch := make(chan struct{})
+	go func() {
+		err := req.Send()
+		if err != nil {
+			panic(err)
+		}
+		ch <- struct{}{}
+	}()
+
+	if d, ok := message.(*sockety.MessageDraft); ok && d.HasStream {
+		_, err := req.Stream().Write(stream)
+		if err != nil {
+			panic(err)
+		}
+		err = req.Stream().Close()
+		if err != nil {
+			panic(err)
+		}
 	}
+
+	<-ch
 	result := make([]byte, buffer.Len())
 	_, err = buffer.Read(result)
 	if err != nil {
@@ -447,7 +470,7 @@ func Benchmark_Parse_PoolCPU(b *testing.B) {
 	})
 }
 
-func Benchmark_Parse_1MB(b *testing.B) {
+func Benchmark_Parse_1MB_Data(b *testing.B) {
 	message := getMessageBytes(sockety.NewMessageDraft("ping").RawData(randomBytes(1024 * 1024)))
 
 	RunBenchmark(b, []int{1}, func(run func(fn func())) {
@@ -466,6 +489,34 @@ func Benchmark_Parse_1MB(b *testing.B) {
 		}
 		end := HandleConnMessages(conn, func(m sockety.Message) {
 			io.Copy(io.Discard, m.Data())
+		})
+		defer end()
+
+		run(func() {
+			reader.Repeat()
+		})
+	})
+}
+
+func Benchmark_Parse_1MB_Stream(b *testing.B) {
+	message := getMessageBytesWithStream(sockety.NewMessageDraft("ping").Stream(), randomBytes(1024*1024))
+
+	RunBenchmark(b, []int{1}, func(run func(fn func())) {
+		reader := newRepeatReader([]byte{227}, message)
+		target := &MockReadWriteCloser{
+			Reader: reader,
+			Writer: io.Discard,
+		}
+		conn, err := sockety.NewConn(context.Background(), target, &sockety.ConnOptions{
+			ReadBufferSize: readBufferSize,
+			Channels:       maxChannels,
+			WriteChannels:  maxChannels,
+		})
+		if err != nil {
+			panic(err)
+		}
+		end := HandleConnMessages(conn, func(m sockety.Message) {
+			io.Copy(io.Discard, m.Stream())
 		})
 		defer end()
 
