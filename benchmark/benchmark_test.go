@@ -537,7 +537,7 @@ func Benchmark_Build(b *testing.B) {
 	})
 }
 
-func Benchmark_Build_1MB(b *testing.B) {
+func Benchmark_Build_1MB_Data(b *testing.B) {
 	RunBenchmark(b, []int{1, 10, 100}, func(run func(fn func())) {
 		conn := createMockConn()
 		data := randomBytes(1024 * 1024)
