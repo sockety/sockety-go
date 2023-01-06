@@ -141,10 +141,10 @@ func send(m MessageDraft, id uuid.UUID, w Writer, stream *messageStreamWriter, p
 			}
 		} else {
 			wg.Add(1)
+			stream.mu.Unlock() // Start accepting data in Stream
 
 			// TODO: Support splitting >uint32 size
 			go func() {
-				stream.mu.Unlock() // Start accepting data in Stream
 				<-stream.Done()
 				err = stream.Err()
 				if err != nil {
