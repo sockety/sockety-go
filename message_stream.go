@@ -2,7 +2,6 @@ package sockety
 
 import (
 	"github.com/sockety/sockety-go/internal/buffer_pool"
-	"github.com/sockety/sockety-go/internal/done_signal"
 	"github.com/valyala/bytebufferpool"
 	"io"
 	"sync"
@@ -15,8 +14,7 @@ type messageStream struct {
 	bufOffset uint64
 	wrote     uint64
 	mu        sync.Mutex
-	done      *done_signal.DoneSignal
-	err       error
+	done      uint32
 	ch        chan struct{}
 }
 
@@ -28,23 +26,23 @@ type MessageStream interface {
 
 func newMessageStream() *messageStream {
 	return &messageStream{
-		ch:   make(chan struct{}),
-		done: done_signal.New(),
+		ch: make(chan struct{}),
 	}
 }
 
 func (m *messageStream) push(p *bytebufferpool.ByteBuffer) error {
 	m.mu.Lock()
 	m.buf = append(m.buf, p)
-	m.wrote = m.wrote + uint64(p.Len())
+	atomic.SwapUint64(&m.wrote, m.wrote+uint64(p.Len()))
 	putOptional(m.ch, struct{}{})
 	m.mu.Unlock()
 	return nil
 }
 
 func (m *messageStream) close() error {
-	m.done.Close()
-	close(m.ch)
+	if atomic.SwapUint32(&m.done, 1) == 0 {
+		close(m.ch)
+	}
 	return nil
 }
 
@@ -54,16 +52,11 @@ func (m *messageStream) Read(p []byte) (int, error) {
 	for {
 		m.mu.Lock()
 
-		if m.done.Load() {
-			m.mu.Unlock()
-			return 0, io.EOF
-		}
+		if len(m.buf) == 0 {
+			if m.Done() {
+				return 0, io.EOF
+			}
 
-		if m.err != nil {
-			err := m.err
-			m.mu.Unlock()
-			return 0, err
-		} else if len(m.buf) == 0 {
 			go func() {
 				m.mu.Unlock()
 			}()
@@ -95,5 +88,5 @@ func (m *messageStream) Received() uint64 {
 }
 
 func (m *messageStream) Done() bool {
-	return m.done.Load()
+	return atomic.LoadUint32(&m.done) == 1
 }
