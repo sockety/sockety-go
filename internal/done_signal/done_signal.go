@@ -4,7 +4,7 @@ import "sync/atomic"
 
 type DoneSignal struct {
 	ch   chan struct{}
-	done atomic.Bool
+	done uint32
 }
 
 func New() *DoneSignal {
@@ -18,11 +18,15 @@ func (s *DoneSignal) Get() <-chan struct{} {
 }
 
 func (s *DoneSignal) Load() bool {
-	return s.done.Load()
+	return atomic.LoadUint32(&s.done) == 1
+}
+
+func (s *DoneSignal) LoadUnsafe() bool {
+	return s.done == 1
 }
 
 func (s *DoneSignal) Close() bool {
-	if s.done.Swap(true) == false {
+	if atomic.SwapUint32(&s.done, 1) == 0 {
 		close(s.ch)
 		return true
 	}
