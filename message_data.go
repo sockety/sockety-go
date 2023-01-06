@@ -44,7 +44,7 @@ func (m *messageData) push(p *bytebufferpool.ByteBuffer) error {
 		return m.err
 	}
 	m.buf = append(m.buf, p)
-	m.wrote = wrote
+	atomic.SwapUint64(&m.wrote, wrote)
 	if m.wrote == m.size {
 		close(m.ch)
 	} else {
